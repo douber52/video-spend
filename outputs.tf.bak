@@ -1,0 +1,15 @@
+output "manual_trigger_command" {
+  description = "Command to manually trigger the Cloud Run Job"
+  value = "gcloud run jobs execute ${google_cloud_run_v2_job.cost_manager.name} --region ${local.env.region} --project ${local.env.project_id}"
+}
+
+output "service_account_email" {
+  description = "Service account email used by the Cloud Run Job"
+  value = data.google_service_account.cost_manager.email
+}
+
+output "service_account_key" {
+  description = "Service account key for local development (save this to service-account-key.json)"
+  value = base64decode(google_service_account_key.cost_manager.private_key)
+  sensitive = true
+}

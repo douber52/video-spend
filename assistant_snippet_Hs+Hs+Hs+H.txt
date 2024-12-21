@@ -1,0 +1,14 @@
+1|# GCP Configuration
+2|GCP_PROJECT_ID=e360-lab
+3|GCP_ZONE=us-central1-a
+4|GCP_REGION=us-central1
+5|
+6|# Budget Configuration
+7|TARGET_SPEND=1
+8|INSTANCE_COUNT=4
+9|
+10|# Safety Configuration
+11|MAX_RUNTIME_HOURS=0.167
+12|CHECK_INTERVAL_MINUTES=1
+13|DESTROY_ON_EXIT=true
+14|PORT=8080 

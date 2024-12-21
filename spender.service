@@ -1,0 +1,16 @@
+[Unit]
+Description=GCP Cost Spender Service
+After=network.target
+
+[Service]
+Type=simple
+User=spender
+Group=spender
+WorkingDirectory=/opt/spender
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/spender/venv/bin/python /opt/spender/cost_manager.py
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target 

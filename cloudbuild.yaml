@@ -1,0 +1,54 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/e360-lab/spender-cost-monitor', '.']
+
+  # Push the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/e360-lab/spender-cost-monitor']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'spender-cost-monitor'
+      - '--image'
+      - 'gcr.io/e360-lab/spender-cost-monitor'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--service-account'
+      - '${_SERVICE_ACCOUNT_EMAIL}'
+      - '--set-env-vars'
+      - 'TARGET_SPEND=${_TARGET_SPEND},CHECK_INTERVAL_MINUTES=${_CHECK_INTERVAL_MINUTES},DESTROY_ON_EXIT=${_DESTROY_ON_EXIT},INSTANCE_COUNT=${_INSTANCE_COUNT},GCP_PROJECT_ID=e360-lab'
+      - '--cpu'
+      - '2'
+      - '--memory'
+      - '4Gi'
+      - '--timeout'
+      - '3600'
+      - '--concurrency'
+      - '1'
+      - '--port'
+      - '8080'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '1'
+      - '--project'
+      - 'e360-lab'
+
+images:
+  - 'gcr.io/e360-lab/spender-cost-monitor'
+
+substitutions:
+  _TARGET_SPEND: '1'
+  _CHECK_INTERVAL_MINUTES: '0.25'
+  _DESTROY_ON_EXIT: 'true'
+  _INSTANCE_COUNT: '8'
+  _SERVICE_ACCOUNT_EMAIL: '' # Will be provided during build
+
+options:
+  logging: CLOUD_LOGGING_ONLY
