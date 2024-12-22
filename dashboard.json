@@ -92,68 +92,15 @@
         "xPos": 0,
         "yPos": 7,
         "widget": {
-          "title": "Instance CPU Usage by Run",
-          "xyChart": {
-            "dataSets": [{
-              "timeSeriesQuery": {
-                "timeSeriesFilter": {
-                  "filter": "metric.type=\"compute.googleapis.com/instance/cpu/utilization\" resource.type=\"gce_instance\" metadata.user_labels.managed_by=\"terraform\"",
-                  "aggregation": {
-                    "alignmentPeriod": "60s",
-                    "perSeriesAligner": "ALIGN_MEAN",
-                    "crossSeriesReducer": "REDUCE_NONE",
-                    "groupByFields": ["resource.labels.instance_id"]
-                  }
-                }
-              },
-              "plotType": "LINE",
-              "minAlignmentPeriod": "60s"
-            }]
-          }
-        }
-      },
-      {
-        "width": 6,
-        "height": 4,
-        "xPos": 0,
-        "yPos": 11,
-        "widget": {
           "title": "Instance Count",
           "xyChart": {
             "dataSets": [{
               "timeSeriesQuery": {
                 "timeSeriesFilter": {
-                  "filter": "metric.type=\"compute.googleapis.com/instance/cpu/utilization\" resource.type=\"gce_instance\" metadata.user_labels.managed_by=\"terraform\"",
+                  "filter": "metric.type=\"custom.googleapis.com/spender/instance_count\" resource.type=\"generic_node\"",
                   "aggregation": {
                     "alignmentPeriod": "60s",
-                    "perSeriesAligner": "ALIGN_MEAN",
-                    "crossSeriesReducer": "REDUCE_COUNT"
-                  }
-                }
-              },
-              "plotType": "LINE",
-              "minAlignmentPeriod": "60s"
-            }]
-          }
-        }
-      },
-      {
-        "width": 6,
-        "height": 4,
-        "xPos": 6,
-        "yPos": 11,
-        "widget": {
-          "title": "Disk Usage",
-          "xyChart": {
-            "dataSets": [{
-              "timeSeriesQuery": {
-                "timeSeriesFilter": {
-                  "filter": "metric.type=\"compute.googleapis.com/instance/disk/read_bytes_count\" resource.type=\"gce_instance\" metadata.user_labels.managed_by=\"terraform\"",
-                  "aggregation": {
-                    "alignmentPeriod": "60s",
-                    "perSeriesAligner": "ALIGN_RATE",
-                    "crossSeriesReducer": "REDUCE_NONE",
-                    "groupByFields": ["resource.labels.instance_id"]
+                    "perSeriesAligner": "ALIGN_MEAN"
                   }
                 }
               },
