@@ -45,3 +45,7 @@ terraform.rc
 key.json
 *.log
 .DS_Store
+new-key.json
+service-account-key.json
+container.env
+dashboard_with_etag.json
