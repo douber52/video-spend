@@ -22,6 +22,9 @@ logging.basicConfig(
 
 class GCPCostManager:
     def __init__(self, project_id, target_spend, region=None, zone=None):
+        # Force reload of environment variables first
+        load_dotenv(override=True)
+        
         self.project_id = project_id
         self.target_spend = float(target_spend)
         self.region = region
@@ -30,11 +33,22 @@ class GCPCostManager:
         self.accumulated_cost = 0.0
         self.last_update_time = time.time()
         self.compute_client = compute_v1.InstancesClient()
+        self.machine_types_client = compute_v1.MachineTypesClient()
         self.monitoring_client = monitoring_v3.MetricServiceClient()
+        
+        # Get machine type and instance count from environment
+        self.machine_type = os.getenv('MACHINE_TYPE')
+        self.instance_count = int(os.getenv('INSTANCE_COUNT'))
+        
+        # Get the cost per hour for this machine type
         self.cost_per_hour = self.get_instance_cost_per_hour()
         
-        logging.info(f"Initializing GCP Cost Manager with project_id={project_id}, target_spend=${target_spend}")
-        logging.info(f"Run ID: {self.run_id}")
+        logging.info(f"Initializing GCP Cost Manager with:")
+        logging.info(f"  Project ID: {project_id}")
+        logging.info(f"  Target Spend: ${target_spend}")
+        logging.info(f"  Machine Type: {self.machine_type}")
+        logging.info(f"  Instance Count: {self.instance_count}")
+        logging.info(f"  Run ID: {self.run_id}")
         
         # Initialize Terraform
         self.init_terraform()
@@ -42,6 +56,22 @@ class GCPCostManager:
     def init_terraform(self):
         """Initialize and apply Terraform configuration"""
         try:
+            # Force reload of environment variables
+            load_dotenv(override=True)
+            
+            # Update instance properties from environment
+            self.machine_type = os.getenv('MACHINE_TYPE')
+            self.instance_count = int(os.getenv('INSTANCE_COUNT'))
+            
+            logging.info(f"Environment variables loaded:")
+            logging.info(f"  MACHINE_TYPE: {os.getenv('MACHINE_TYPE')}")
+            logging.info(f"  INSTANCE_COUNT: {os.getenv('INSTANCE_COUNT')}")
+            logging.info(f"  TARGET_SPEND: {os.getenv('TARGET_SPEND')}")
+            
+            logging.info(f"Using configuration from environment:")
+            logging.info(f"  Machine Type: {self.machine_type}")
+            logging.info(f"  Instance Count: {self.instance_count}")
+            
             # Debug: Show current directory contents
             ls_result = subprocess.run(
                 ['ls', '-la'],
@@ -54,27 +84,24 @@ class GCPCostManager:
             # Remove any existing tfvars files
             for f in ['terraform.tfvars', 'terraform.tfvars.tpl', 'terraform.tfvars.bak']:
                 if os.path.exists(f):
-                    logging.info(f"Found {f} with contents:")
-                    with open(f, 'r') as tf:
-                        logging.info(tf.read())
                     os.remove(f)
                     logging.info(f"Removed {f}")
 
-            # Create terraform.tfvars with proper content
+            # Create terraform.tfvars with proper content using updated properties
             tfvars_content = {
                 'environments': {
                     'e360': {
                         'project_id': self.project_id,
                         'region': self.region,
                         'zone': self.zone,
-                        'instance_count': int(os.getenv('INSTANCE_COUNT', '8')),
-                        'machine_type': os.getenv('MACHINE_TYPE', 'n2-standard-32'),
+                        'instance_count': self.instance_count,
+                        'machine_type': self.machine_type,
                         'target_spend': float(self.target_spend)
                     }
                 },
                 'target_env': 'e360',
-                'instance_count': int(os.getenv('INSTANCE_COUNT', '8')),
-                'machine_type': os.getenv('MACHINE_TYPE', 'n2-standard-32')
+                'instance_count': self.instance_count,
+                'machine_type': self.machine_type
             }
 
             # Write the tfvars file in HCL format
@@ -128,52 +155,75 @@ class GCPCostManager:
             raise
 
     def get_instance_cost_per_hour(self):
-        """Get the actual cost per hour for the instance type from GCP Pricing Calculator"""
+        """Get the actual cost per hour for the instance type using Cloud Compute API"""
         try:
-            # First, get the machine type from one of our instances
-            instance_filter = f'name eq video-processor-.*'
+            logging.info(f"Getting cost for machine type: {self.machine_type}")
+
+            # Get machine type details from Compute API
+            request = compute_v1.GetMachineTypeRequest(
+                project=self.project_id,
+                zone=self.zone,
+                machine_type=self.machine_type
+            )
+            
+            machine_type_info = self.machine_types_client.get(request=request)
+            
+            # Calculate based on specs
+            vcpus = machine_type_info.guest_cpus
+            memory_gb = machine_type_info.memory_mb / 1024.0
+            
+            # Base N2 prices
+            cpu_price = 0.031611  # N2 price per vCPU
+            memory_price = 0.004237  # N2 price per GB
+            
+            hourly_cost = (vcpus * cpu_price + memory_gb * memory_price)
+            total_hourly_cost = hourly_cost * self.instance_count
+            per_15s_cost = total_hourly_cost * (15.0/3600.0)
+            
+            logging.info(f"Instance Cost Summary:")
+            logging.info(f"  Machine Type: {self.machine_type}")
+            logging.info(f"  Region: {self.region}")
+            logging.info(f"  vCPUs: {vcpus}")
+            logging.info(f"  Memory: {memory_gb:.1f} GB")
+            logging.info(f"  CPU Price: ${cpu_price}/hour/vCPU")
+            logging.info(f"  Memory Price: ${memory_price}/hour/GB")
+            logging.info(f"  Target Instances: {self.instance_count}")
+            logging.info(f"  Cost Per Instance: ${hourly_cost:.4f}/hour")
+            logging.info(f"  Total Hourly Cost: ${total_hourly_cost:.2f}/hour")
+            logging.info(f"  Total 15-Second Cost: ${per_15s_cost:.4f}/15s")
+            return hourly_cost
+            
+        except Exception as e:
+            logging.error(f"Error getting instance cost from Cloud Compute API: {str(e)}")
+            logging.warning("Using default rate of $1.50/hour")
+            return 1.50  # Default fallback rate
+
+    def _get_access_token(self):
+        """Get the current access token for API calls"""
+        try:
+            cmd = ['gcloud', 'auth', 'print-access-token']
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to get access token: {e}")
+            raise
+
+    def get_instance_count(self):
+        """Get the current number of running instances"""
+        try:
+            instance_filter = 'name eq video-processor-.*'
             request = compute_v1.ListInstancesRequest(
                 project=self.project_id,
                 zone=self.zone,
                 filter=instance_filter
             )
-            instances = self.compute_client.list(request=request)
-            
-            # Get the first instance's machine type
-            for instance in instances:
-                machine_type_path = instance.machine_type
-                # Extract just the machine type name from the URL-like path
-                machine_type = machine_type_path.split('/')[-1]
-                break
-            else:
-                logging.warning("No instances found, using default rate")
-                return 1.50
-
-            # Call Google Cloud Pricing Calculator API
-            base_url = "https://cloudpricingcalculator.appspot.com/static/data/pricelist.json"
-            response = requests.get(base_url)
-            
-            if response.status_code != 200:
-                logging.error(f"Failed to get pricing data: {response.status_code}")
-                return 1.50
-            
-            pricing_data = response.json()
-            compute_pricing = pricing_data.get('gcp_price_list', {}).get('CP-COMPUTEENGINE-VMIMAGE-N2-STANDARD-32', {})
-            
-            # Get region-specific pricing
-            region_key = self.region.replace('us-', 'us').replace('europe-', 'europe').replace('asia-', 'asia')
-            hourly_cost = compute_pricing.get(region_key)
-            
-            if hourly_cost:
-                logging.info(f"Found hourly rate for {machine_type} in {self.region}: ${hourly_cost}/hour")
-                return float(hourly_cost)
-            
-            logging.warning(f"No pricing found for {machine_type} in {self.region}, using default rate")
-            return 1.50  # Default fallback rate
-            
+            instances = list(self.compute_client.list(request=request))
+            running_count = sum(1 for instance in instances if instance.status == "RUNNING")
+            return running_count
         except Exception as e:
-            logging.error(f"Error getting instance cost from API: {str(e)}")
-            return 1.50  # Default fallback rate
+            logging.error(f"Error getting instance count: {str(e)}")
+            # Fallback to environment variable
+            return int(os.getenv('INSTANCE_COUNT', '8'))
 
     def get_current_cost(self):
         """Get the current cost for the project"""
@@ -273,11 +323,57 @@ class GCPCostManager:
         except Exception as e:
             logging.error(f"Error writing cost metric: {str(e)}")
 
+    def write_instance_count_metric(self, count):
+        """Write the current instance count to Cloud Monitoring"""
+        try:
+            series = monitoring_v3.TimeSeries()
+            series.metric.type = "custom.googleapis.com/spender/instance_count"
+            series.resource.type = "generic_node"
+            
+            # Set labels matching dashboard
+            series.metric.labels["run_id"] = self.run_id
+            series.metric.labels["environment"] = "e360"
+            series.metric.labels["component"] = "worker"
+            
+            series.resource.labels["project_id"] = self.project_id
+            series.resource.labels["location"] = self.zone
+            series.resource.labels["namespace"] = "spender"
+            series.resource.labels["node_id"] = self.run_id
+            
+            # For GAUGE metrics, start_time must equal end_time
+            now = time.time()
+            now_seconds = int(now)
+            now_nanos = int((now - now_seconds) * 10**9)
+            
+            point = monitoring_v3.Point({
+                "interval": {
+                    "end_time": {"seconds": now_seconds, "nanos": now_nanos},
+                    "start_time": {"seconds": now_seconds, "nanos": now_nanos}
+                },
+                "value": {"int64_value": count}
+            })
+            series.points = [point]
+            
+            logging.info(f"Writing instance count metric: {count}")
+            self.monitoring_client.create_time_series(
+                request={
+                    "name": f"projects/{self.project_id}",
+                    "time_series": [series]
+                }
+            )
+            logging.info(f"Successfully wrote instance count metric: {count}")
+        except Exception as e:
+            logging.error(f"Error writing instance count metric: {str(e)}")
+
     def check_and_manage_resources(self):
         """Check current costs and manage resources accordingly"""
         try:
             current_cost = self.get_current_cost()
             logging.info(f"Current cost: ${current_cost:.2f}")
+            
+            # Get and write instance count
+            instance_count = self.get_instance_count()
+            self.write_instance_count_metric(instance_count)
             
             if current_cost >= self.target_spend:
                 logging.warning(f"Cost (${current_cost:.2f}) exceeds target (${self.target_spend:.2f})")

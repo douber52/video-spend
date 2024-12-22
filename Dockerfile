@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     curl \
     unzip \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Terraform
@@ -22,7 +23,7 @@ COPY requirements.txt .
 RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt
 
 # Copy all files
-COPY cost_manager.py main.tf variables.tf outputs.tf entrypoint.sh .
+COPY cost_manager.py main.tf variables.tf outputs.tf entrypoint.sh ./
 RUN chmod 755 /app/entrypoint.sh
 
 # Debug: Show what files are in the container
